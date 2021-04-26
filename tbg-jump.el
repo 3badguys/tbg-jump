@@ -64,14 +64,23 @@
     ;;
     ))
 
+(defun tbg-jump-word-at-point ()
+  "Get the word at point."
+  (let (bounds))
+  (if (use-region-p)
+      (buffer-substring-no-properties (region-beginning) (region-end))
+    (let ((bounds (bounds-of-thing-at-point 'symbol)))
+      (and bounds (buffer-substring-no-properties (car bounds) (cdr bounds))))))
+
 ;;;###autoload
 (defun tbg-jump-find-tag-at-point ()
   "Find tag using tagname at point. Use `pop-tag-mark' to jump back."
   (interactive)
-  (let ()
-    (tbg-jump-tags-file-pretreat)
-    ;;
-    ))
+  (tbg-jump-tags-file-pretreat)
+  (let ((word (tbg-jump-word-at-point)))
+    (cond
+     (word (message "Word at point: %s" word))
+     (t (message "No word found at point.")))))
 
 (provide 'tbg-jump)
 
