@@ -60,27 +60,62 @@
         src-root)
     (when (not tags-file)
       (setq src-root (read-directory-name "SrcCode root: " (tbg-jump-locate-project-root)))
-      (tbg-jump-create-tags-file-async src-root))
-    ;;
-    ))
+      (tbg-jump-create-tags-file-async src-root))))
 
-(defun tbg-jump-word-at-point ()
-  "Get the word at point."
-  (let (bounds))
+(defun tbg-jump-tag-at-point ()
+  "Get the tag at point."
   (if (use-region-p)
       (buffer-substring-no-properties (region-beginning) (region-end))
     (let ((bounds (bounds-of-thing-at-point 'symbol)))
       (and bounds (buffer-substring-no-properties (car bounds) (cdr bounds))))))
+
+(defun tbg-jump-read-file (file)
+  "Read FILE content."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (buffer-string)))
+
+(defun tbg-jump-tag-search-regex (tag)
+  "Get the regex to search TAG in tags file."
+  (concat "" tag "\\([0-9]+\\),\\([0-9]+\\)"))
+
+(defun tbg-jump-search-tag-candidates (file-content tag)
+  "Search tags file and return the candidates of TAG."
+  (let ((tag-re (tbg-jump-tag-search-regex tag))
+        cands)
+    (with-temp-buffer
+      (insert file-content)
+      (goto-char (point-min))
+      (while (re-search-forward tag nil "NOERROR")
+        (beginning-of-line)
+        (when (re-search-forward tag-re (point-at-eol) "NOERROR")
+          (push (list :tag tag
+                      :text (buffer-substring-no-properties
+                             (line-beginning-position) (line-end-position))
+                      :line-num (match-string-no-properties 1)
+                      :pos (match-string-no-properties 2)
+                      :file (etags-file-of-tag t))
+                cands))))
+    cands))
+
+(defun tbg-jump-search-tags-file (tag)
+  "Search specific tag in tags file."
+  (let ((tags-file (tbg-jump-locate-tags-file))
+        cands)
+    (or tag (setq tag (read-string "Enter tag name: ")))
+    (when (and tags-file (file-exists-p tags-file))
+      (setq cands (tbg-jump-search-tag-candidates (tbg-jump-read-file tags-file) tag)))
+    (print cands)))
 
 ;;;###autoload
 (defun tbg-jump-find-tag-at-point ()
   "Find tag using tagname at point. Use `pop-tag-mark' to jump back."
   (interactive)
   (tbg-jump-tags-file-pretreat)
-  (let ((word (tbg-jump-word-at-point)))
+  (let ((tag (tbg-jump-tag-at-point)))
     (cond
-     (word (message "Word at point: %s" word))
-     (t (message "No word found at point.")))))
+     (tag (tbg-jump-search-tags-file tag))
+     (t (message "No tag found at point.")))))
 
 (provide 'tbg-jump)
 
