@@ -90,12 +90,12 @@
       (goto-char (point-min))
       (while (re-search-forward @tag nil "NOERROR")
         (beginning-of-line)
-        (when (re-search-forward $tag-re (point-at-eol) "NOERROR")
+        (when (re-search-forward $tag-re (line-end-position) "NOERROR")
           (add-to-list '$cands
                        (list :text (match-string-no-properties 1)
                              :tag (match-string-no-properties 2)
-                             :column (match-string-no-properties 3)
-                             :position (match-string-no-properties 4)
+                             :column (string-to-number (match-string-no-properties 3))
+                             :position (string-to-number (match-string-no-properties 4))
                              :file (etags-file-of-tag t))
                        "APPEND"))))
     $cands))
@@ -126,6 +126,16 @@
               (princ "\n\n" $output-buffer)))
           @cands)))
 
+(defun tbg-jump--jump-one-candidate-location (@one-cand)
+  "Jump to the location of one candidate @ONE-CAND."
+  (let (($tag (plist-get @one-cand :tag))
+        ($file (plist-get @one-cand :file))
+        ($column (plist-get @one-cand :column)))
+    (find-file $file)
+    (goto-char (point-min))
+    (forward-line (1- $column))
+    (search-forward $tag (line-end-position) "NOERROR")))
+
 (defun tbg-jump--search-tags-file (@tag)
   "Search @TAG in tags file."
   (let (($tags-file (tbg-jump--locate-tags-file))
@@ -133,7 +143,10 @@
     (or @tag (setq @tag (read-string "Enter tag name: ")))
     (when (and $tags-file (file-exists-p $tags-file))
       (setq $cands (tbg-jump--search-tag-candidates (tbg-jump--read-file $tags-file) @tag)))
-    (and $cands (tbg-jump--output-candidates @tag $cands))))
+    (cond
+     ((not $cands) (message "No candidate found for tag(%s)." @tag))
+     ((= 1 (length $cands)) (tbg-jump--jump-one-candidate-location (car $cands)))
+     (t (tbg-jump--output-candidates @tag $cands)))))
 
 ;;;###autoload
 (defun tbg-jump-find-tag-at-point ()
