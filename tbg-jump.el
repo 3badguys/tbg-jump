@@ -76,8 +76,10 @@
     (buffer-string)))
 
 (defun tbg-jump--tag-search-regex (@tag)
-  "Get the regex to search @TAG in tags file."
-  (concat "" @tag "\\([0-9]+\\),\\([0-9]+\\)"))
+  "Get the regex to search @TAG in tags file. And @TAG could be nil."
+  (concat "\\([^\n]+\\)\\("
+          (or @tag "[^\n]+")
+          "\\)\\([0-9]+\\),\\([0-9]+\\)"))
 
 (defun tbg-jump--search-tag-candidates (@file-content @tag)
   "Search from @FILE-CONTENT and return the candidates of @TAG."
@@ -89,14 +91,39 @@
       (while (re-search-forward @tag nil "NOERROR")
         (beginning-of-line)
         (when (re-search-forward $tag-re (point-at-eol) "NOERROR")
-          (push (list :tag @tag
-                      :text (buffer-substring-no-properties
-                             (line-beginning-position) (line-end-position))
-                      :line-num (match-string-no-properties 1)
-                      :pos (match-string-no-properties 2)
+          (push (list :text (match-string-no-properties 1)
+                      :tag (match-string-no-properties 2)
+                      :column (match-string-no-properties 3)
+                      :position (match-string-no-properties 4)
                       :file (etags-file-of-tag t))
                 $cands))))
     $cands))
+
+(defun tbg-jump--current-date-time-string ()
+  "Return current date-time string in this format 「2021-04-28T18:06:51+08:00」"
+  (concat
+   (format-time-string "%Y-%m-%dT%T")
+   (funcall (lambda (x) (format "%s:%s" (substring x 0 3) (substring x 3 5))) (format-time-string "%z"))))
+
+(defun tbg-jump--output-candidates (@tag @cands)
+  "Output candidates of @TAG stored in @CANDS."
+  (let (($buffer-name "*tbg-jump output*")
+        $output-buffer)
+    (when (get-buffer $buffer-name) (kill-buffer $buffer-name))
+    (setq $output-buffer (generate-new-buffer $buffer-name))
+    (switch-to-buffer-other-window $output-buffer)
+    (princ
+     (concat
+      "-*- coding: utf-8; mode: tbg-jump-output -*-" "\n"
+      "Datetime: " (tbg-jump--current-date-time-string) "\n"
+      (format "Search tag: %s\n" @tag)
+      "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n"
+      ) $output-buffer)
+    (mapc (lambda ($one-cand)
+            (progn
+              (princ $one-cand $output-buffer)
+              (princ "\n\n" $output-buffer)))
+          @cands)))
 
 (defun tbg-jump--search-tags-file (@tag)
   "Search @TAG in tags file."
@@ -105,7 +132,7 @@
     (or @tag (setq @tag (read-string "Enter tag name: ")))
     (when (and $tags-file (file-exists-p $tags-file))
       (setq $cands (tbg-jump--search-tag-candidates (tbg-jump--read-file $tags-file) @tag)))
-    (print $cands)))
+    (and $cands (tbg-jump--output-candidates @tag $cands))))
 
 ;;;###autoload
 (defun tbg-jump-find-tag-at-point ()
