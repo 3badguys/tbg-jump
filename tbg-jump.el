@@ -84,19 +84,20 @@
 (defun tbg-jump--search-tag-candidates (@file-content @tag)
   "Search from @FILE-CONTENT and return the candidates of @TAG."
   (let (($tag-re (tbg-jump--tag-search-regex @tag))
-        $cands)
+        ($cands '()))
     (with-temp-buffer
       (insert @file-content)
       (goto-char (point-min))
       (while (re-search-forward @tag nil "NOERROR")
         (beginning-of-line)
         (when (re-search-forward $tag-re (point-at-eol) "NOERROR")
-          (push (list :text (match-string-no-properties 1)
-                      :tag (match-string-no-properties 2)
-                      :column (match-string-no-properties 3)
-                      :position (match-string-no-properties 4)
-                      :file (etags-file-of-tag t))
-                $cands))))
+          (add-to-list '$cands
+                       (list :text (match-string-no-properties 1)
+                             :tag (match-string-no-properties 2)
+                             :column (match-string-no-properties 3)
+                             :position (match-string-no-properties 4)
+                             :file (etags-file-of-tag t))
+                       "APPEND"))))
     $cands))
 
 (defun tbg-jump--current-date-time-string ()
