@@ -31,6 +31,16 @@
   :group 'tbg-jump
   :type 'string)
 
+(defcustom tbg-jump-snippet-before-context-lines 2
+  "The count of lines before snippet."
+  :group 'tbg-jump
+  :type 'integer)
+
+(defcustom tbg-jump-snippet-after-context-lines 3
+  "The count of lines after snippet."
+  :group 'tbg-jump
+  :type 'integer)
+
 (defun tbg-jump--locate-project-root ()
   "Find the root of project."
   (let (($project-root (cl-some (apply-partially 'locate-dominating-file
@@ -94,7 +104,7 @@
           (add-to-list '$cands
                        (list :text (match-string-no-properties 1)
                              :tag (match-string-no-properties 2)
-                             :column (string-to-number (match-string-no-properties 3))
+                             :line-number (string-to-number (match-string-no-properties 3))
                              :position (string-to-number (match-string-no-properties 4))
                              :file (etags-file-of-tag t))
                        "APPEND"))))
@@ -106,6 +116,49 @@
    (format-time-string "%Y-%m-%dT%T")
    (funcall (lambda (x) (format "%s:%s" (substring x 0 3) (substring x 3 5))) (format-time-string "%z"))))
 
+(defun tbg-jump--insert-one-source-snippet (@one-cand @buffer-name)
+  "Insert source snippet via $ONE-CAND into the buffer named @BUFFER-NAME."
+  (let (($tag (plist-get @one-cand :tag))
+        ($file (plist-get @one-cand :file))
+        ($line-number (plist-get @one-cand :line-number))
+        $snippet-begin $match-line-begin $snippet-end
+        $snippet-before-block $snippet-middle-block $snippet-after-block
+        $tag-begin $tag-end)
+    (with-temp-buffer
+      (insert-file-contents $file)
+      (cond
+       ((> (1- $line-number) tbg-jump-snippet-before-context-lines)
+        (progn
+          (forward-line (- (1- $line-number) tbg-jump-snippet-before-context-lines))
+          (setq $snippet-begin (point))
+          (forward-line tbg-jump-snippet-before-context-lines)
+          (setq $match-line-begin (point))))
+       (t
+        (progn
+          (setq $snippet-begin (point))
+          (forward-line (1- $line-number))
+          (setq $match-line-begin (point)))))
+      (forward-line (1+ tbg-jump-snippet-after-context-lines))
+      (setq $snippet-end (point))
+
+      (goto-char $match-line-begin)
+      (when (search-forward $tag (line-end-position) "NOERROR")
+        (setq $tag-begin (match-beginning 0))
+        (setq $tag-end (match-end 0))
+        (put-text-property $tag-begin $tag-end 'font-lock-face '(:foreground "red")))
+
+      (setq $snippet-before-block (buffer-substring-no-properties $snippet-begin $tag-begin))
+      (setq $snippet-after-block (buffer-substring-no-properties $tag-end $snippet-end))
+      (setq $snippet-middle-block (buffer-substring $tag-begin $tag-end))
+
+      (with-current-buffer @buffer-name
+        (insert
+         (format "%s%s%s\n"
+                 $snippet-before-block
+                 $snippet-middle-block
+                 $snippet-after-block
+                 ))))))
+
 (defun tbg-jump--output-candidates (@tag @cands)
   "Output candidates of @TAG stored in @CANDS."
   (let (($buffer-name "*tbg-jump output*")
@@ -115,25 +168,23 @@
     (switch-to-buffer-other-window $output-buffer)
     (princ
      (concat
-      "-*- coding: utf-8; mode: tbg-jump-output -*-" "\n"
+      "-*- coding: utf-8; mode: tbg-jump -*-" "\n"
       "Datetime: " (tbg-jump--current-date-time-string) "\n"
       (format "Search tag: %s\n" @tag)
       "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n"
       ) $output-buffer)
     (mapc (lambda ($one-cand)
-            (progn
-              (princ $one-cand $output-buffer)
-              (princ "\n\n" $output-buffer)))
+            (tbg-jump--insert-one-source-snippet $one-cand $buffer-name))
           @cands)))
 
 (defun tbg-jump--jump-one-candidate-location (@one-cand)
   "Jump to the location of one candidate @ONE-CAND."
   (let (($tag (plist-get @one-cand :tag))
         ($file (plist-get @one-cand :file))
-        ($column (plist-get @one-cand :column)))
+        ($line-number (plist-get @one-cand :line-number)))
     (find-file $file)
     (goto-char (point-min))
-    (forward-line (1- $column))
+    (forward-line (1- $line-number))
     (search-forward $tag (line-end-position) "NOERROR")))
 
 (defun tbg-jump--search-tags-file (@tag)
