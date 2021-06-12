@@ -229,7 +229,8 @@ The index of candidate is @CAND_INDEX."
         (setq $tag-end (match-end 0))
         (put-text-property $tag-begin $tag-end 'tbg-jump-tag $tag)
         (put-text-property $tag-begin $tag-end 'tbg-jump-filepath $file)
-        (put-text-property $tag-begin $tag-end 'tbg-jump-line-number $line-number))
+        (put-text-property $tag-begin $tag-end 'tbg-jump-line-number $line-number)
+        (add-text-properties $tag-begin $tag-end '(mouse-face highlight)))
 
       (setq $snippet-before-block (buffer-substring-no-properties $snippet-begin $tag-begin))
       (setq $snippet-after-block (buffer-substring-no-properties $tag-end $snippet-end))
@@ -345,12 +346,27 @@ The index of candidate is @CAND_INDEX."
   (interactive)
   (search-forward tbg-jump-tag-prefix tbg-jump-search-max "NOERROR"))
 
+(defun tbg-jump-loop-jump-tag ()
+  "Put cursor to next tag and loop from the tag which in the header part."
+  (interactive)
+  (or (search-forward tbg-jump-tag-prefix tbg-jump-search-max "NOERROR")
+      (goto-char tbg-jump-search-min)))
+
 (defun tbg-jump-jump-to-location ()
   "Open source file and put cursor to the specific location."
   (interactive)
   (let (($tag (get-text-property (point) 'tbg-jump-tag))
         ($filepath (get-text-property (point) 'tbg-jump-filepath))
         ($line-number (get-text-property (point) 'tbg-jump-line-number)))
+    (tbg-jump--jump-to-location-internal $tag $filepath $line-number)))
+
+(defun tbg-jump-mouse-jump-to-location (@event)
+  "Open source file and put cursor to the specific location."
+  (interactive "e")
+  (let* (($pos (posn-point (event-end @event)))
+         ($tag (get-text-property $pos 'tbg-jump-tag))
+         ($filepath (get-text-property $pos 'tbg-jump-filepath))
+         ($line-number (get-text-property $pos 'tbg-jump-line-number)))
     (tbg-jump--jump-to-location-internal $tag $filepath $line-number)))
 
 (defvar tbg-jump-mode-map nil "Keybinding for `tbg-jump.el output'")
@@ -363,7 +379,10 @@ The index of candidate is @CAND_INDEX."
   (define-key tbg-jump-mode-map (kbd "<left>") 'tbg-jump-previous-tag)
   (define-key tbg-jump-mode-map (kbd "<right>") 'tbg-jump-next-tag)
 
-  (define-key tbg-jump-mode-map (kbd "RET") 'tbg-jump-jump-to-location))
+  (define-key tbg-jump-mode-map (kbd "TAB") 'tbg-jump-loop-jump-tag)
+
+  (define-key tbg-jump-mode-map (kbd "RET") 'tbg-jump-jump-to-location)
+  (define-key tbg-jump-mode-map (kbd "<mouse-1>") 'tbg-jump-mouse-jump-to-location))
 
 (define-derived-mode tbg-jump-mode fundamental-mode "tbg-jump"
   "Major mode for reading output for tbg-jump commands."
