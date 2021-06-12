@@ -226,17 +226,24 @@ The index of candidate is @CAND_INDEX."
       (goto-char $match-line-begin)
       (when (search-forward $tag (line-end-position) "NOERROR")
         (setq $tag-begin (match-beginning 0))
-        (setq $tag-end (match-end 0)))
+        (setq $tag-end (match-end 0))
+        (put-text-property $tag-begin $tag-end 'tbg-jump-tag $tag)
+        (put-text-property $tag-begin $tag-end 'tbg-jump-filepath $file)
+        (put-text-property $tag-begin $tag-end 'tbg-jump-line-number $line-number))
 
       (setq $snippet-before-block (buffer-substring-no-properties $snippet-begin $tag-begin))
       (setq $snippet-after-block (buffer-substring-no-properties $tag-end $snippet-end))
-      (setq $snippet-middle-block (buffer-substring-no-properties $tag-begin $tag-end)))
+      (setq $snippet-middle-block (buffer-substring $tag-begin $tag-end)))
 
     (with-current-buffer @buffer-name
       (insert
        (concat
-        (format "%d %s%s%s\n" @cand_index tbg-jump-filepath-prefix $file tbg-jump-filepath-postfix)
+        ;; insert file path info.
+        (format "%d %s" @cand_index tbg-jump-filepath-prefix)
+        (propertize $file 'tbg-jump-filepath $file)
+        (format "%s\n" tbg-jump-filepath-postfix)
         tbg-jump-file-separator
+        ;; insert snippet info.
         $snippet-before-block
         tbg-jump-tag-prefix
         $snippet-middle-block
@@ -268,15 +275,21 @@ The index of candidate is @CAND_INDEX."
     (princ "Done." $output-buffer)
     (tbg-jump--switch-to-output $output-buffer)))
 
+(defun tbg-jump--jump-to-location-internal (@tag @filepath @line-number)
+  "Open @FILEPATH. Jump to @LINE-NUMBER. Then search @TAG."
+  (when (and @filepath (file-exists-p @filepath))
+      (or (equal (buffer-file-name) @filepath) (find-file-other-window @filepath))
+      (when @line-number
+        (goto-char (point-min))
+        (forward-line (1- @line-number))
+        (and @tag (search-forward @tag (line-end-position) "NOERROR")))))
+
 (defun tbg-jump--jump-one-candidate-location (@one-cand)
   "Jump to the location of one candidate @ONE-CAND."
   (let (($tag (plist-get @one-cand :tag))
         ($file (plist-get @one-cand :file))
         ($line-number (plist-get @one-cand :line-number)))
-    (find-file $file)
-    (goto-char (point-min))
-    (forward-line (1- $line-number))
-    (search-forward $tag (line-end-position) "NOERROR")))
+    (tbg-jump--jump-to-location-internal $tag $file $line-number)))
 
 (defun tbg-jump--search-tags-file (@tag)
   "Search @TAG in tags file."
@@ -332,14 +345,25 @@ The index of candidate is @CAND_INDEX."
   (interactive)
   (search-forward tbg-jump-tag-prefix tbg-jump-search-max "NOERROR"))
 
+(defun tbg-jump-jump-to-location ()
+  "Open source file and put cursor to the specific location."
+  (interactive)
+  (let (($tag (get-text-property (point) 'tbg-jump-tag))
+        ($filepath (get-text-property (point) 'tbg-jump-filepath))
+        ($line-number (get-text-property (point) 'tbg-jump-line-number)))
+    (tbg-jump--jump-to-location-internal $tag $filepath $line-number)))
+
 (defvar tbg-jump-mode-map nil "Keybinding for `tbg-jump.el output'")
 (progn
   (setq tbg-jump-mode-map (make-sparse-keymap))
 
-  (define-key tbg-jump-mode-map (kbd "<up>") 'tbg-jump-previous-tag)
-  (define-key tbg-jump-mode-map (kbd "<down>") 'tbg-jump-next-tag)
-  (define-key tbg-jump-mode-map (kbd "<left>") 'tbg-jump-previous-filepath)
-  (define-key tbg-jump-mode-map (kbd "<right>") 'tbg-jump-next-filepath))
+  (define-key tbg-jump-mode-map (kbd "<up>") 'tbg-jump-previous-filepath)
+  (define-key tbg-jump-mode-map (kbd "<down>") 'tbg-jump-next-filepath)
+
+  (define-key tbg-jump-mode-map (kbd "<left>") 'tbg-jump-previous-tag)
+  (define-key tbg-jump-mode-map (kbd "<right>") 'tbg-jump-next-tag)
+
+  (define-key tbg-jump-mode-map (kbd "RET") 'tbg-jump-jump-to-location))
 
 (define-derived-mode tbg-jump-mode fundamental-mode "tbg-jump"
   "Major mode for reading output for tbg-jump commands."
