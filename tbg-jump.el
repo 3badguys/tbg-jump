@@ -41,14 +41,32 @@
   :group 'tbg-jump
   :type 'integer)
 
+(defvar tbg-jump-search-min nil "The minimum point for searching output buffer.")
+(defvar tbg-jump-search-max nil "The maximum point for searching output buffer.")
+
 (defcustom tbg-jump-header-separator
   "hh━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+  "A string as visual separator."
+  :group 'tbg-jump)
+
+(defcustom tbg-jump-file-separator
+  "ff━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
   "A string as visual separator."
   :group 'tbg-jump)
 
 (defcustom tbg-jump-snippet-separator
   "ss━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
   "A string as visual separator."
+  :group 'tbg-jump)
+
+(defcustom tbg-jump-tag-in-header-prefix
+  "〖"
+  "A left-bracket string that marks matched tagname which in header part."
+  :group 'tbg-jump)
+
+(defcustom tbg-jump-tag-in-header-postfix
+  "〗"
+  "A right-bracket string that marks matched tagname which in header part."
   :group 'tbg-jump)
 
 (defcustom tbg-jump-tag-prefix
@@ -69,6 +87,15 @@
 (defcustom tbg-jump-filepath-postfix
   "〙"
   "A right-bracket string used to mark file path and navigate previous/next."
+  :group 'tbg-jump)
+
+(defface tbg-jump-tag-in-header-highlight
+  '((t :foreground "blue"
+       :background "white"
+       :weight bold
+       :underline t
+       ))
+  "Face for matched tag which in header part."
   :group 'tbg-jump)
 
 (defface tbg-jump-tag-highlight
@@ -167,11 +194,12 @@
      (concat
       "-*- coding: utf-8; mode: tbg-jump -*-" "\n"
       "Datetime: " (tbg-jump--current-date-time-string) "\n"
-      (format "Search tag: ❬%s❭\n" @tag)
+      (format "Search tag: %s%s%s\n" tbg-jump-tag-in-header-prefix @tag tbg-jump-tag-in-header-postfix)
       tbg-jump-header-separator) @buffer-name))
 
-(defun tbg-jump--insert-one-source-snippet (@one-cand @buffer-name)
-  "Insert source snippet via $ONE-CAND into the buffer named @BUFFER-NAME."
+(defun tbg-jump--insert-one-source-snippet (@cand_index @one-cand @buffer-name)
+  "Insert source snippet via $ONE-CAND into the buffer named @BUFFER-NAME.
+The index of candidate is @CAND_INDEX."
   (let (($tag (plist-get @one-cand :tag))
         ($file (plist-get @one-cand :file))
         ($line-number (plist-get @one-cand :line-number))
@@ -202,36 +230,43 @@
 
       (setq $snippet-before-block (buffer-substring-no-properties $snippet-begin $tag-begin))
       (setq $snippet-after-block (buffer-substring-no-properties $tag-end $snippet-end))
-      (setq $snippet-middle-block (concat
-                                   tbg-jump-tag-prefix
-                                   (buffer-substring $tag-begin $tag-end)
-                                   tbg-jump-tag-postfix)))
+      (setq $snippet-middle-block (buffer-substring-no-properties $tag-begin $tag-end)))
+
     (with-current-buffer @buffer-name
       (insert
-       (format "%s%s%s%s"
-               $snippet-before-block
-               $snippet-middle-block
-               $snippet-after-block
-               tbg-jump-snippet-separator
-               )))))
+       (concat
+        (format "%d %s%s%s\n" @cand_index tbg-jump-filepath-prefix $file tbg-jump-filepath-postfix)
+        tbg-jump-file-separator
+        $snippet-before-block
+        tbg-jump-tag-prefix
+        $snippet-middle-block
+        tbg-jump-tag-postfix
+        $snippet-after-block
+        tbg-jump-snippet-separator)))))
+
+(defun tbg-jump--switch-to-output (@buffer)
+  "Switch to @BUFFER and highlight stuff."
+  (switch-to-buffer @buffer)
+  (goto-char (point-min))
+  (search-forward (format "Search tag: %s" tbg-jump-tag-in-header-prefix) nil "NOERROR")
+  (setq tbg-jump-search-min (point))
+  (setq tbg-jump-search-max (1- (point-max)))
+  (tbg-jump-mode))
 
 (defun tbg-jump--output-candidates (@tag @cands)
   "Output candidates of @TAG stored in @CANDS."
   (let (($buffer-name "*tbg-jump output*")
-        $output-buffer)
+        $output-buffer ($cand_index 0))
     (when (get-buffer $buffer-name) (kill-buffer $buffer-name))
     (setq $output-buffer (generate-new-buffer $buffer-name))
     (switch-to-buffer-other-window $output-buffer)
     (tbg-jump--insert-header @tag $output-buffer)
     (mapc (lambda ($one-cand)
-            (tbg-jump--insert-one-source-snippet $one-cand $buffer-name))
+            (setq $cand_index (1+ $cand_index))
+            (tbg-jump--insert-one-source-snippet $cand_index $one-cand $buffer-name))
           @cands)
-    (tbg-jump-mode)))
-
-(defun tbg-jump--switch-to-output (@buffer)
-  "Switch to @BUFFER and highlight stuff."
-  (switch-to-buffer @buffer)
-  (tbg-jump-mode))
+    (princ "Done." $output-buffer)
+    (tbg-jump--switch-to-output $output-buffer)))
 
 (defun tbg-jump--jump-one-candidate-location (@one-cand)
   "Jump to the location of one candidate @ONE-CAND."
@@ -268,17 +303,43 @@
 
 (setq tbg-jump-fock-lock-keyworks
       (let (
+            (xTagInHeader (format "%s\\([^%s]+\\)%s" tbg-jump-tag-in-header-prefix tbg-jump-tag-in-header-postfix tbg-jump-tag-in-header-postfix))
             (xTag (format "%s\\([^%s]+\\)%s" tbg-jump-tag-prefix tbg-jump-tag-postfix tbg-jump-tag-postfix))
             (xfPath (format "%s\\([^%s]+\\)%s" tbg-jump-filepath-prefix tbg-jump-filepath-postfix tbg-jump-filepath-postfix)))
-        `(
+        `((,xTagInHeader . (1 'tbg-jump-tag-in-header-highlight))
           (,xTag . (1 'tbg-jump-tag-highlight))
           (,xfPath . (1 'tbg-jump-file-path-highlight)))))
+
+(defun tbg-jump-previous-filepath ()
+  "Put cursor to previous filepath."
+  (interactive)
+  (when (search-backward tbg-jump-filepath-postfix tbg-jump-search-min "NOERROR")
+    (left-char)))
+
+(defun tbg-jump-next-filepath ()
+  "Put cursor to next filepath."
+  (interactive)
+  (search-forward tbg-jump-filepath-prefix tbg-jump-search-max "NOERROR"))
+
+(defun tbg-jump-previous-tag ()
+  "Put cursor to previous tag."
+  (interactive)
+  (when (search-backward tbg-jump-tag-postfix tbg-jump-search-min "NOERROR")
+    (left-char)))
+
+(defun tbg-jump-next-tag ()
+  "Put cursor to next tag."
+  (interactive)
+  (search-forward tbg-jump-tag-prefix tbg-jump-search-max "NOERROR"))
 
 (defvar tbg-jump-mode-map nil "Keybinding for `tbg-jump.el output'")
 (progn
   (setq tbg-jump-mode-map (make-sparse-keymap))
-  ;;
-  )
+
+  (define-key tbg-jump-mode-map (kbd "<up>") 'tbg-jump-previous-tag)
+  (define-key tbg-jump-mode-map (kbd "<down>") 'tbg-jump-next-tag)
+  (define-key tbg-jump-mode-map (kbd "<left>") 'tbg-jump-previous-filepath)
+  (define-key tbg-jump-mode-map (kbd "<right>") 'tbg-jump-next-filepath))
 
 (define-derived-mode tbg-jump-mode fundamental-mode "tbg-jump"
   "Major mode for reading output for tbg-jump commands."
