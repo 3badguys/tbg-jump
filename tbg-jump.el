@@ -178,7 +178,7 @@
                              :tag (match-string-no-properties 2)
                              :line-number (string-to-number (match-string-no-properties 3))
                              :position (string-to-number (match-string-no-properties 4))
-                             :file (etags-file-of-tag t))
+                             :src-file (etags-file-of-tag t))
                        "APPEND"))))
     $cands))
 
@@ -186,15 +186,16 @@
   "Return current date-time string in this format 「2021-04-28T18:06:51+08:00」"
   (concat
    (format-time-string "%Y-%m-%dT%T")
-   (funcall (lambda (x) (format "%s:%s" (substring x 0 3) (substring x 3 5))) (format-time-string "%z"))))
+   (funcall (lambda (x) (format "%s:%s" (substring x 0 3) (substring x 3 5)))
+            (format-time-string "%z"))))
 
-(defun tbg-jump--insert-header (@tbg-jump-context @buffer-name)
-  "Insert header into buffer named @BUFFER-NAME. The jump context info stored in @TBG-JUMP-CONTEXT."
+(defun tbg-jump--insert-header (@tbg-jump-context @buffer)
+  "Insert header into @BUFFER. The jump context info stored in @TBG-JUMP-CONTEXT."
   (let (($tag (plist-get @tbg-jump-context :tag))
-        ($OrignalFile (plist-get @tbg-jump-context :OrignalFile))
-        ($OrignalPos (plist-get @tbg-jump-context :OrignalPos)))
+        ($orignal-file (plist-get @tbg-jump-context :orignal-file))
+        ($orignal-pos (plist-get @tbg-jump-context :orignal-pos)))
 
-    (with-current-buffer @buffer-name
+    (with-current-buffer @buffer
       (insert
        (concat
         "-*- coding: utf-8; mode: tbg-jump -*-" "\n"
@@ -202,23 +203,23 @@
         (format "Search tag: %s%s%s\n"
                 tbg-jump-tag-in-header-prefix
                 (propertize $tag
-                            'tbg-jump-filepath $OrignalFile
-                            'tbg-jump-pos $OrignalPos
+                            'tbg-jump-filepath $orignal-file
+                            'tbg-jump-pos $orignal-pos
                             'mouse-face 'highlight)
                 tbg-jump-tag-in-header-postfix)
         tbg-jump-header-separator)))))
 
-(defun tbg-jump--insert-one-source-snippet (@cand_index @one-cand @buffer-name)
-  "Insert source snippet via $ONE-CAND into the buffer named @BUFFER-NAME.
+(defun tbg-jump--insert-one-source-snippet (@cand_index @one-cand @buffer)
+  "Insert source snippet via $ONE-CAND into @BUFFER.
 The index of candidate is @CAND_INDEX."
   (let (($tag (plist-get @one-cand :tag))
-        ($file (plist-get @one-cand :file))
+        ($src-file (plist-get @one-cand :src-file))
         ($line-number (plist-get @one-cand :line-number))
         $snippet-begin $match-line-begin $snippet-end
         $snippet-before-block $snippet-middle-block $snippet-after-block
         $tag-begin $tag-end)
     (with-temp-buffer
-      (insert-file-contents $file)
+      (insert-file-contents $src-file)
       (cond
        ((> (1- $line-number) tbg-jump-snippet-before-context-lines)
         (progn
@@ -239,7 +240,7 @@ The index of candidate is @CAND_INDEX."
         (setq $tag-begin (match-beginning 0))
         (setq $tag-end (match-end 0))
         (put-text-property $tag-begin $tag-end 'tbg-jump-tag $tag)
-        (put-text-property $tag-begin $tag-end 'tbg-jump-filepath $file)
+        (put-text-property $tag-begin $tag-end 'tbg-jump-filepath $src-file)
         (put-text-property $tag-begin $tag-end 'tbg-jump-line-number $line-number)
         (add-text-properties $tag-begin $tag-end '(mouse-face highlight)))
 
@@ -247,15 +248,15 @@ The index of candidate is @CAND_INDEX."
       (setq $snippet-after-block (buffer-substring-no-properties $tag-end $snippet-end))
       (setq $snippet-middle-block (buffer-substring $tag-begin $tag-end)))
 
-    (with-current-buffer @buffer-name
+    (with-current-buffer @buffer
       (insert
        (concat
-        ;; insert file path info.
+        ;; insert source file path info.
         (format "%d %s%s%s\n"
                 @cand_index
                 tbg-jump-filepath-prefix
-                (propertize $file
-                            'tbg-jump-filepath $file
+                (propertize $src-file
+                            'tbg-jump-filepath $src-file
                             'mouse-face 'highlight)
                 tbg-jump-filepath-postfix)
         tbg-jump-file-separator
@@ -283,8 +284,8 @@ The index of candidate is @CAND_INDEX."
         $output-buffer ($cand_index 0))
     (setq $tbg-jump-context
           (list :tag @tag
-                :OrignalFile (buffer-file-name)
-                :OrignalPos (point)))
+                :orignal-file (buffer-file-name)
+                :orignal-pos (point)))
 
     (when (get-buffer $buffer-name) (kill-buffer $buffer-name))
     (setq $output-buffer (generate-new-buffer $buffer-name))
@@ -293,7 +294,7 @@ The index of candidate is @CAND_INDEX."
     (tbg-jump--insert-header $tbg-jump-context $output-buffer)
     (mapc (lambda ($one-cand)
             (setq $cand_index (1+ $cand_index))
-            (tbg-jump--insert-one-source-snippet $cand_index $one-cand $buffer-name))
+            (tbg-jump--insert-one-source-snippet $cand_index $one-cand $output-buffer))
           @cands)
     (princ "Done." $output-buffer)
     (tbg-jump--switch-to-output $output-buffer)))
@@ -314,9 +315,9 @@ The index of candidate is @CAND_INDEX."
 (defun tbg-jump--jump-one-candidate-location (@one-cand)
   "Jump to the location of one candidate @ONE-CAND."
   (let (($tag (plist-get @one-cand :tag))
-        ($file (plist-get @one-cand :file))
+        ($src-file (plist-get @one-cand :src-file))
         ($line-number (plist-get @one-cand :line-number)))
-    (tbg-jump--jump-to-location-internal $tag $file nil $line-number)))
+    (tbg-jump--jump-to-location-internal $tag $src-file nil $line-number)))
 
 (defun tbg-jump--search-tags-file (@tag)
   "Search @TAG in tags file."
@@ -343,9 +344,18 @@ The index of candidate is @CAND_INDEX."
 
 (setq tbg-jump-fock-lock-keyworks
       (let (
-            (xTagInHeader (format "%s\\([^%s]+\\)%s" tbg-jump-tag-in-header-prefix tbg-jump-tag-in-header-postfix tbg-jump-tag-in-header-postfix))
-            (xTag (format "%s\\([^%s]+\\)%s" tbg-jump-tag-prefix tbg-jump-tag-postfix tbg-jump-tag-postfix))
-            (xfPath (format "%s\\([^%s]+\\)%s" tbg-jump-filepath-prefix tbg-jump-filepath-postfix tbg-jump-filepath-postfix)))
+            (xTagInHeader (format "%s\\([^%s]+\\)%s"
+                                  tbg-jump-tag-in-header-prefix
+                                  tbg-jump-tag-in-header-postfix
+                                  tbg-jump-tag-in-header-postfix))
+            (xTag (format "%s\\([^%s]+\\)%s"
+                          tbg-jump-tag-prefix
+                          tbg-jump-tag-postfix
+                          tbg-jump-tag-postfix))
+            (xfPath (format "%s\\([^%s]+\\)%s"
+                            tbg-jump-filepath-prefix
+                            tbg-jump-filepath-postfix
+                            tbg-jump-filepath-postfix)))
         `((,xTagInHeader . (1 'tbg-jump-tag-in-header-highlight))
           (,xTag . (1 'tbg-jump-tag-highlight))
           (,xfPath . (1 'tbg-jump-file-path-highlight)))))
@@ -379,7 +389,7 @@ The index of candidate is @CAND_INDEX."
       (goto-char tbg-jump-search-min)))
 
 (defun tbg-jump-jump-to-location ()
-  "Open source file and put cursor to the specific location."
+  "Open the specific file and put cursor to the specific location."
   (interactive)
   (let (($tag (get-text-property (point) 'tbg-jump-tag))
         ($filepath (get-text-property (point) 'tbg-jump-filepath))
@@ -388,7 +398,7 @@ The index of candidate is @CAND_INDEX."
     (tbg-jump--jump-to-location-internal $tag $filepath $pos $line-number)))
 
 (defun tbg-jump-mouse-jump-to-location (@event)
-  "Open source file and put cursor to the specific location."
+  "Open the specific file and put cursor to the specific location."
   (interactive "e")
   (let* (($clickPos (posn-point (event-end @event)))
          ($tag (get-text-property $clickPos 'tbg-jump-tag))
