@@ -188,14 +188,25 @@
    (format-time-string "%Y-%m-%dT%T")
    (funcall (lambda (x) (format "%s:%s" (substring x 0 3) (substring x 3 5))) (format-time-string "%z"))))
 
-(defun tbg-jump--insert-header (@tag @buffer-name)
-  "Insert header into buffer named @BUFFER-NAME when you are searching @TAG."
-  (princ
-     (concat
-      "-*- coding: utf-8; mode: tbg-jump -*-" "\n"
-      "Datetime: " (tbg-jump--current-date-time-string) "\n"
-      (format "Search tag: %s%s%s\n" tbg-jump-tag-in-header-prefix @tag tbg-jump-tag-in-header-postfix)
-      tbg-jump-header-separator) @buffer-name))
+(defun tbg-jump--insert-header (@tbg-jump-context @buffer-name)
+  "Insert header into buffer named @BUFFER-NAME. The jump context info stored in @TBG-JUMP-CONTEXT."
+  (let (($tag (plist-get @tbg-jump-context :tag))
+        ($OrignalFile (plist-get @tbg-jump-context :OrignalFile))
+        ($OrignalPos (plist-get @tbg-jump-context :OrignalPos)))
+
+    (with-current-buffer @buffer-name
+      (insert
+       (concat
+        "-*- coding: utf-8; mode: tbg-jump -*-" "\n"
+        "Datetime: " (tbg-jump--current-date-time-string) "\n"
+        (format "Search tag: %s%s%s\n"
+                tbg-jump-tag-in-header-prefix
+                (propertize $tag
+                            'tbg-jump-filepath $OrignalFile
+                            'tbg-jump-pos $OrignalPos
+                            'mouse-face 'highlight)
+                tbg-jump-tag-in-header-postfix)
+        tbg-jump-header-separator)))))
 
 (defun tbg-jump--insert-one-source-snippet (@cand_index @one-cand @buffer-name)
   "Insert source snippet via $ONE-CAND into the buffer named @BUFFER-NAME.
@@ -243,7 +254,9 @@ The index of candidate is @CAND_INDEX."
         (format "%d %s%s%s\n"
                 @cand_index
                 tbg-jump-filepath-prefix
-                (propertize $file 'tbg-jump-filepath $file 'mouse-face 'highlight)
+                (propertize $file
+                            'tbg-jump-filepath $file
+                            'mouse-face 'highlight)
                 tbg-jump-filepath-postfix)
         tbg-jump-file-separator
         ;; insert snippet info.
@@ -265,12 +278,19 @@ The index of candidate is @CAND_INDEX."
 
 (defun tbg-jump--output-candidates (@tag @cands)
   "Output candidates of @TAG stored in @CANDS."
-  (let (($buffer-name "*tbg-jump output*")
+  (let ($tbg-jump-context
+        ($buffer-name "*tbg-jump output*")
         $output-buffer ($cand_index 0))
+    (setq $tbg-jump-context
+          (list :tag @tag
+                :OrignalFile (buffer-file-name)
+                :OrignalPos (point)))
+
     (when (get-buffer $buffer-name) (kill-buffer $buffer-name))
     (setq $output-buffer (generate-new-buffer $buffer-name))
+
     (switch-to-buffer-other-window $output-buffer)
-    (tbg-jump--insert-header @tag $output-buffer)
+    (tbg-jump--insert-header $tbg-jump-context $output-buffer)
     (mapc (lambda ($one-cand)
             (setq $cand_index (1+ $cand_index))
             (tbg-jump--insert-one-source-snippet $cand_index $one-cand $buffer-name))
@@ -278,21 +298,25 @@ The index of candidate is @CAND_INDEX."
     (princ "Done." $output-buffer)
     (tbg-jump--switch-to-output $output-buffer)))
 
-(defun tbg-jump--jump-to-location-internal (@tag @filepath @line-number)
-  "Open @FILEPATH. Jump to @LINE-NUMBER. Then search @TAG."
+(defun tbg-jump--jump-to-location-internal (@tag @filepath @pos @line-number)
+  "Open @FILEPATH. Then jump to specific position:
+1. Jump to position @POS.
+2. Jump to @LINE-NUMBER. Then search @TAG."
   (when (and @filepath (file-exists-p @filepath))
-      (or (equal (buffer-file-name) @filepath) (find-file-other-window @filepath))
+    (or (equal (buffer-file-name) @filepath) (find-file-other-window @filepath))
+    (if @pos
+        (goto-char @pos)
       (when @line-number
         (goto-char (point-min))
         (forward-line (1- @line-number))
-        (and @tag (search-forward @tag (line-end-position) "NOERROR")))))
+        (and @tag (search-forward @tag (line-end-position) "NOERROR"))))))
 
 (defun tbg-jump--jump-one-candidate-location (@one-cand)
   "Jump to the location of one candidate @ONE-CAND."
   (let (($tag (plist-get @one-cand :tag))
         ($file (plist-get @one-cand :file))
         ($line-number (plist-get @one-cand :line-number)))
-    (tbg-jump--jump-to-location-internal $tag $file $line-number)))
+    (tbg-jump--jump-to-location-internal $tag $file nil $line-number)))
 
 (defun tbg-jump--search-tags-file (@tag)
   "Search @TAG in tags file."
@@ -349,7 +373,7 @@ The index of candidate is @CAND_INDEX."
   (search-forward tbg-jump-tag-prefix tbg-jump-search-max "NOERROR"))
 
 (defun tbg-jump-loop-jump-tag ()
-  "Put cursor to next tag and loop from the tag which in the header part."
+  "Put cursor to next tag and loop from the tag which in header part."
   (interactive)
   (or (search-forward tbg-jump-tag-prefix tbg-jump-search-max "NOERROR")
       (goto-char tbg-jump-search-min)))
@@ -359,17 +383,19 @@ The index of candidate is @CAND_INDEX."
   (interactive)
   (let (($tag (get-text-property (point) 'tbg-jump-tag))
         ($filepath (get-text-property (point) 'tbg-jump-filepath))
+        ($pos (get-text-property (point) 'tbg-jump-pos))
         ($line-number (get-text-property (point) 'tbg-jump-line-number)))
-    (tbg-jump--jump-to-location-internal $tag $filepath $line-number)))
+    (tbg-jump--jump-to-location-internal $tag $filepath $pos $line-number)))
 
 (defun tbg-jump-mouse-jump-to-location (@event)
   "Open source file and put cursor to the specific location."
   (interactive "e")
-  (let* (($pos (posn-point (event-end @event)))
-         ($tag (get-text-property $pos 'tbg-jump-tag))
-         ($filepath (get-text-property $pos 'tbg-jump-filepath))
-         ($line-number (get-text-property $pos 'tbg-jump-line-number)))
-    (tbg-jump--jump-to-location-internal $tag $filepath $line-number)))
+  (let* (($clickPos (posn-point (event-end @event)))
+         ($tag (get-text-property $clickPos 'tbg-jump-tag))
+         ($filepath (get-text-property $clickPos 'tbg-jump-filepath))
+         ($pos (get-text-property $clickPos 'tbg-jump-pos))
+         ($line-number (get-text-property $clickPos 'tbg-jump-line-number)))
+    (tbg-jump--jump-to-location-internal $tag $filepath $pos $line-number)))
 
 (defvar tbg-jump-mode-map nil "Keybinding for `tbg-jump.el output'")
 (progn
