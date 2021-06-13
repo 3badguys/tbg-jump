@@ -240,9 +240,11 @@ The index of candidate is @CAND_INDEX."
       (insert
        (concat
         ;; insert file path info.
-        (format "%d %s" @cand_index tbg-jump-filepath-prefix)
-        (propertize $file 'tbg-jump-filepath $file)
-        (format "%s\n" tbg-jump-filepath-postfix)
+        (format "%d %s%s%s\n"
+                @cand_index
+                tbg-jump-filepath-prefix
+                (propertize $file 'tbg-jump-filepath $file 'mouse-face 'highlight)
+                tbg-jump-filepath-postfix)
         tbg-jump-file-separator
         ;; insert snippet info.
         $snippet-before-block
