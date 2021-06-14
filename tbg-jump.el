@@ -196,9 +196,9 @@ Search the device in $DRIVE-LIST."
 
 (defun tbg-jump--tag-search-regex (@tag)
   "Get the regex to search @TAG in tags file. And @TAG could be nil."
-  (concat "\\([^\n]+\\)\\("
-          (or @tag "[^\n]+")
-          "\\)\\([0-9]+\\),\\([0-9]+\\)"))
+  (concat "\\([^\^?\^A\n]+\\)\^?\\("
+          (or @tag "[^\^?\^A\n]+")
+          "\\)\^A\\([0-9]+\\),\\([0-9]+\\)"))
 
 (defun tbg-jump--search-tag-candidates (@file-content @tag)
   "Search from @FILE-CONTENT and return the candidates of @TAG."
