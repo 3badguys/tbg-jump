@@ -21,6 +21,18 @@
   :group 'tbg-jump
   :type 'string)
 
+(defcustom tbg-jump-ctags-program-name "ctags"
+  "Name of ctags(Universal Ctags) program."
+  :group 'tbg-jump
+  :type 'string)
+
+(defcustom tbg-jump-ctags-program-path nil
+  "Path of ctags(Universal Ctags) program.
+1. nil, automatically detect.
+2. not nil, full path of ctags."
+  :group 'tbg-jump
+  :type 'string)
+
 (defcustom tbg-jump-project-root-marks '(".git" ".svn")
   "The marks used to locate project root directory."
   :group 'tbg-jump
@@ -126,15 +138,40 @@
     (and $tags-dir (file-truename (concat (file-name-as-directory $tags-dir)
                                          tbg-jump-tags-file-name)))))
 
+(defun tbg-jump--get-cygwin-program-path ($executable-name $drive-list)
+  "Get path of executable file named $EXECUTABLE-NAME in cygwin system.
+Search the device in $DRIVE-LIST."
+  (catch 'found-path
+    (mapc
+     #'(lambda ($drive)
+         (let (($path
+                (format "%s:\\\\cygwin64\\\\bin\\\\%s.exe" $drive $executable-name)))
+           (when (file-exists-p $path) (throw 'found-path $path))))
+     $drive-list)
+    nil))
+
+(defun tbg-jump--get-program-path ($executable-name)
+  "Get path of executable file named $EXECUTABLE-NAME."
+  (let (($device-list '("c" "d" "e" "f" "g" "h" "a" "b" "i"
+                        "j" "k" "l" "m" "n" "o" "p" "q" "r"
+                        "s" "t" "u" "v" "w" "x" "y" "z")))
+    (or (executable-find $executable-name)
+        (and (string-equal system-type "windows-nt")
+             (tbg-jump--get-cygwin-program-path $executable-name $device-list)))))
+
 (defun tbg-jump--create-tags-file-async (@src-root)
   "Create tags in @SRC-ROOT file async."
-  (start-process-shell-command
-   ""
-   nil
-   (format "ctags -f %s -e -R %s"
-           (expand-file-name tbg-jump-tags-file-name (directory-file-name @src-root))
-           (directory-file-name @src-root)))
-  (message "created tags async through start-process-shell-command."))
+  (let (($ctags-program (or tbg-jump-ctags-program-path
+                            (tbg-jump--get-program-path tbg-jump-ctags-program-name))))
+    (when $ctags-program
+      (start-process-shell-command
+       ""
+       nil
+       (format "%s -f %s -e -R %s"
+               $ctags-program
+               (expand-file-name tbg-jump-tags-file-name (directory-file-name @src-root))
+               (directory-file-name @src-root)))
+      (message "created tags async through start-process-shell-command."))))
 
 (defun tbg-jump--tags-file-pretreat ()
   "Do some pretreat operations."
