@@ -56,6 +56,9 @@
 (defvar tbg-jump-search-min nil "The minimum point for searching output buffer.")
 (defvar tbg-jump-search-max nil "The maximum point for searching output buffer.")
 
+(defvar tbg-jump-ctags-cache (make-hash-table :test 'equal)
+  "Cache of ctags files content.")
+
 (defcustom tbg-jump-header-separator
   "hh━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
   "A string as visual separator."
@@ -362,13 +365,30 @@ The index of candidate is @CAND_INDEX."
         ($line-number (plist-get @one-cand :line-number)))
     (tbg-jump--jump-to-location-internal $tag $src-file nil $line-number)))
 
+(defun tbg-jump--get-cache-tags-content (@tags-file)
+  "Read @TAGS-FILE content through ctags cache."
+  (let (($tags-info (gethash @tags-file tbg-jump-ctags-cache)))
+    (plist-get $tags-info :content)))
+
+(defun tbg-jump--get-cache-tags-filesize (@tags-file)
+  "Read filesize of @TAGS-FILE through ctags cache."
+  (let (($tags-info (gethash @tags-file tbg-jump-ctags-cache)))
+    (or (plist-get $tags-info :filesize) 0)))
+
 (defun tbg-jump--search-tags-file (@tag)
   "Search @TAG in tags file."
   (let (($tags-file (tbg-jump--locate-tags-file))
+        $tags-file-size $tags-file-content
         $cands)
     (or @tag (setq @tag (read-string "Enter tag name: ")))
     (when (and $tags-file (file-exists-p $tags-file))
-      (setq $cands (tbg-jump--search-tag-candidates (tbg-jump--read-file $tags-file) @tag)))
+      (when (< (tbg-jump--get-cache-tags-filesize $tags-file)
+               (setq $tags-file-size (nth 7 (file-attributes $tags-file))))
+        (puthash $tags-file (list :content (tbg-jump--read-file $tags-file)
+                                  :filesize $tags-file-size) tbg-jump-ctags-cache))
+
+      (when (setq $tags-file-content (tbg-jump--get-cache-tags-content $tags-file))
+        (setq $cands (tbg-jump--search-tag-candidates $tags-file-content @tag))))
     (cond
      ((not $cands) (message "No candidate found for tag(%s)." @tag))
      ((= 1 (length $cands)) (tbg-jump--jump-one-candidate-location (car $cands)))
