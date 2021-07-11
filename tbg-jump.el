@@ -162,10 +162,18 @@ Search the device in $DRIVE-LIST."
         (and (string-equal system-type "windows-nt")
              (tbg-jump--get-cygwin-program-path $executable-name $device-list)))))
 
+(defun tbg-jump--universal-ctags-p (@ctags-program)
+  "Check @CTAGS-PROGRAM whether is Universal Ctags."
+  (let (($version-ouput (shell-command-to-string
+                         (concat @ctags-program " --version"))))
+    (string-match-p "Universal Ctags" $version-ouput)))
+
 (defun tbg-jump--create-tags-file-async (@src-root)
   "Create tags in @SRC-ROOT file async."
   (let (($ctags-program (or tbg-jump-ctags-program-path
                             (tbg-jump--get-program-path tbg-jump-ctags-program-name))))
+    (or (tbg-jump--universal-ctags-p $ctags-program)
+        (error "Ctags isn't Universal Ctags! Package tbg-jump just support Universal Ctags!"))
     (when $ctags-program
       (start-process-shell-command
        ""
