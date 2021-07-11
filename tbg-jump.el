@@ -173,13 +173,19 @@ Search the device in $DRIVE-LIST."
                (directory-file-name @src-root)))
       (message "created tags async through start-process-shell-command."))))
 
+;;;###autoload
+(defun tbg-jump-scan-code (&optional @src-dir)
+  "Use ctags to scan code at @SRC-DIR, and generate the TAGS file."
+  (interactive)
+  (let (($src-root (or @src-dir
+                       (read-directory-name "SrcCode root: " (tbg-jump--locate-project-root)))))
+    (tbg-jump--create-tags-file-async $src-root)))
+
 (defun tbg-jump--tags-file-pretreat ()
   "Do some pretreat operations."
-  (let (($tags-file (tbg-jump--locate-tags-file))
-        $src-root)
+  (let (($tags-file (tbg-jump--locate-tags-file)))
     (when (not $tags-file)
-      (setq $src-root (read-directory-name "SrcCode root: " (tbg-jump--locate-project-root)))
-      (tbg-jump--create-tags-file-async $src-root))))
+      (error "Can't find %s file. Please run `tbg-jump-scan-code'!" tbg-jump-tags-file-name))))
 
 (defun tbg-jump--tag-at-point ()
   "Get the tag at point."
