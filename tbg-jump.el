@@ -192,7 +192,7 @@ Search the device in $DRIVE-LIST."
                        (read-directory-name "SrcCode root: " (tbg-jump--locate-project-root)))))
     (tbg-jump--create-tags-file-async $src-root)))
 
-(defun tbg-jump--tags-file-pretreat ()
+(defun tbg-jump--tags-file-precheck ()
   "Do some pretreat operations."
   (let (($tags-file (tbg-jump--locate-tags-file)))
     (when (not $tags-file)
@@ -219,21 +219,27 @@ Search the device in $DRIVE-LIST."
 
 (defun tbg-jump--search-tag-candidates (@file-content @tag)
   "Search from @FILE-CONTENT and return the candidates of @TAG."
-  (let (($tag-re (tbg-jump--tag-search-regex @tag))
+  (let (($tag-re (tbg-jump--tag-search-regex @tag)) $tag-matched
         ($cands '()))
     (with-temp-buffer
       (insert @file-content)
       (goto-char (point-min))
-      (while (re-search-forward @tag nil "NOERROR")
-        (beginning-of-line)
-        (when (re-search-forward $tag-re (line-end-position) "NOERROR")
-          (add-to-list '$cands
-                       (list :text (match-string-no-properties 1)
-                             :tag (match-string-no-properties 2)
-                             :line-number (string-to-number (match-string-no-properties 3))
-                             :position (string-to-number (match-string-no-properties 4))
-                             :src-file (etags-file-of-tag t))
-                       "APPEND"))))
+      (while (re-search-forward $tag-re nil "NOERROR")
+        (setq $tag-matched (match-string-no-properties 2))
+        ;; Skip the following candidates:
+        ;; 1. Anonymous extra tag start with __anon
+        ;;    For example, enum/struct/union/class/namespace of C/C++ language.
+        ;; 2. Number tag, and it always can't be a symbol in most languages
+        ;;    For example, array of json.
+        (or (string-match-p "__anon" $tag-matched)
+            (string-match-p "^[0-9]+$" $tag-matched)
+            (add-to-list '$cands
+                         (list :text (match-string-no-properties 1)
+                               :tag $tag-matched
+                               :line-number (string-to-number (match-string-no-properties 3))
+                               :position (string-to-number (match-string-no-properties 4))
+                               :src-file (etags-file-of-tag t))
+                         "APPEND"))))
     $cands))
 
 (defun tbg-jump--current-date-time-string ()
@@ -256,7 +262,7 @@ Search the device in $DRIVE-LIST."
         "Datetime: " (tbg-jump--current-date-time-string) "\n"
         (format "Search tag: %s%s%s\n"
                 tbg-jump-tag-in-header-prefix
-                (propertize $tag
+                (propertize (or $tag "ALL")
                             'tbg-jump-filepath $orignal-file
                             'tbg-jump-pos $orignal-pos
                             'mouse-face 'highlight)
@@ -271,7 +277,7 @@ The index of candidate is @CAND_INDEX."
         ($line-number (plist-get @one-cand :line-number))
         $snippet-begin $match-line-begin $snippet-end
         $snippet-before-block $snippet-middle-block $snippet-after-block
-        $tag-begin $tag-end)
+        $tag-re $tag-begin $tag-end)
     (with-temp-buffer
       (insert-file-contents $src-file)
       (cond
@@ -290,10 +296,17 @@ The index of candidate is @CAND_INDEX."
       (setq $snippet-end (point))
 
       (goto-char $match-line-begin)
-      (when (search-forward $tag (line-end-position) "NOERROR")
+
+      ;; TODO: Operator Overloading of C++ has problem
+      (setq $tag-re
+            (if (string-match-p "^operator" $tag)
+                "operator"
+              (replace-regexp-in-string "[ \t]+" "[ \t]*" (regexp-quote $tag))))
+      (when (search-forward-regexp $tag-re (line-end-position) "NOERROR")
         (setq $tag-begin (match-beginning 0))
         (setq $tag-end (match-end 0))
-        (put-text-property $tag-begin $tag-end 'tbg-jump-tag $tag)
+        (put-text-property $tag-begin $tag-end 'tbg-jump-tag
+                           (buffer-substring-no-properties $tag-begin $tag-end))
         (put-text-property $tag-begin $tag-end 'tbg-jump-filepath $src-file)
         (put-text-property $tag-begin $tag-end 'tbg-jump-line-number $line-number)
         (add-text-properties $tag-begin $tag-end '(mouse-face highlight)))
@@ -388,7 +401,6 @@ The index of candidate is @CAND_INDEX."
   (let (($tags-file (tbg-jump--locate-tags-file))
         $tags-file-size $tags-file-content
         $cands)
-    (or @tag (setq @tag (read-string "Enter tag name: ")))
     (when (and $tags-file (file-exists-p $tags-file))
       (when (< (tbg-jump--get-cache-tags-filesize $tags-file)
                (setq $tags-file-size (nth 7 (file-attributes $tags-file))))
@@ -406,11 +418,18 @@ The index of candidate is @CAND_INDEX."
 (defun tbg-jump-find-tag-at-point ()
   "Find tag using tagname at point. Use `pop-tag-mark' to jump back."
   (interactive)
-  (tbg-jump--tags-file-pretreat)
+  (tbg-jump--tags-file-precheck)
   (let (($tag (tbg-jump--tag-at-point)))
     (cond
      ($tag (tbg-jump--search-tags-file $tag))
      (t (message "No tag found at point.")))))
+
+;;;###autoload
+(defun tbg-jump-list-tag ()
+  "List all tags."
+  (interactive)
+  (tbg-jump--tags-file-precheck)
+  (tbg-jump--search-tags-file nil))
 
 
 (setq tbg-jump-fock-lock-keyworks
