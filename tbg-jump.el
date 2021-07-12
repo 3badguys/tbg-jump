@@ -297,11 +297,9 @@ The index of candidate is @CAND_INDEX."
 
       (goto-char $match-line-begin)
 
-      ;; TODO: Operator Overloading of C++ has problem
-      (setq $tag-re
-            (if (string-match-p "^operator" $tag)
-                "operator"
-              (replace-regexp-in-string "[ \t]+" "[ \t]*" (regexp-quote $tag))))
+      ;; tag will contain redundant spaces. For example, operator overloading of C++ language.
+      (setq $tag-re (replace-regexp-in-string "[ \t]+" "[ \t]*" (regexp-quote $tag)))
+
       (when (search-forward-regexp $tag-re (line-end-position) "NOERROR")
         (setq $tag-begin (match-beginning 0))
         (setq $tag-end (match-end 0))
