@@ -336,6 +336,7 @@ The index of candidate is @CAND_INDEX."
 (defun tbg-jump--switch-to-output (@buffer)
   "Switch to @BUFFER and highlight stuff."
   (switch-to-buffer @buffer)
+  (setq buffer-read-only t)
   (goto-char (point-min))
   (search-forward (format "Search tag: %s" tbg-jump-tag-in-header-prefix) nil "NOERROR")
   (setq tbg-jump-search-min (point))
